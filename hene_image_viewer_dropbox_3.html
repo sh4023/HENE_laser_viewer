@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Multi-Control Image Viewer with PC Charts</title>
+<style>
+  :root{
+    --bg:#0f1724; --card:#0b1220; --accent:#60a5fa; --muted:#94a3b8; --radius:12px;
+  }
+  body{
+    margin:0; padding:20px; 
+    background:linear-gradient(180deg,#071025 0%, #051029 100%);
+    font-family:Inter, system-ui, Arial, sans-serif; color:#e6eef8;
+    display:flex; flex-direction:column; gap:40px;
+  }
+  .container{
+    width:min(1100px, 96%); margin:0 auto;
+    background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    border-radius:var(--radius); padding:20px;
+    box-shadow:0 10px 30px rgba(2,6,23,0.7);
+  }
+  header{display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px}
+  header h1{font-size:18px; margin:0}
+  .viewer{
+    background:var(--card); border-radius:10px; padding:12px;
+    display:grid; grid-template-columns: 1fr 280px; gap:12px; align-items:start;
+  }
+  .stage{position:relative; border-radius:8px; overflow:hidden; min-height:260px; display:flex; align-items:center; justify-content:center; background:linear-gradient(180deg, #0b1220, #061022);}
+  .stage img{max-width:100%; max-height:37vh; width:auto; height:auto; display:block; transition:opacity .35s ease, transform .35s ease; object-fit:contain ;transform: scale(1.5);}
+  .stage .caption{position:absolute; left:12px; bottom:12px; background:rgba(3,6,12,0.6); padding:8px 10px; border-radius:8px; font-size:14px; color:var(--muted)}
+  .controls{display:flex; gap:8px; align-items:center; margin-top:8px}
+  .btn{background:transparent; border:1px solid rgba(255,255,255,0.06); color:inherit; padding:8px 10px; border-radius:10px; cursor:pointer}
+  .btn:active{transform:translateY(1px)}
+  .large-btn{padding:10px 14px}
+  .sidebar{display:flex; flex-direction:column; gap:10px}
+  .range-wrap{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); padding:12px; border-radius:8px}
+  .range-labels{display:flex; justify-content:space-between; font-size:13px; color:var(--muted); margin-bottom:6px}
+  input[type=range]{width:100%}
+  .thumbs{display:flex; gap:8px; overflow:auto; padding:6px; border-radius:8px}
+  .thumb{flex:0 0 64px; height:48px; border-radius:8px; overflow:hidden; cursor:pointer; border:2px solid transparent}
+  .thumb img{width:100%; height:100%; object-fit:cover; display:block}
+  .thumb.active{border-color:var(--accent); box-shadow:0 6px 18px rgba(96,165,250,0.08)}
+  footer{display:flex; justify-content:space-between; align-items:center; margin-top:12px; color:var(--muted); font-size:13px}
+  @media (max-width:880px){ .viewer{grid-template-columns:1fr;} .sidebar{order:2} }
+  .top-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  margin-bottom: 20px;
+  background: rgba(11,18,32,0.8);
+  border-radius: 12px;
+  width: fit-content;
+  font-size: 14px;
+  color: var(--muted);
+}
+.top-header .top-icon { width: 100px; height: 100px; object-fit: contain; background-color: transparent; text-align: center;}
+.top-header .top-icon-leo { width: 400px; height: 50px; object-fit: contain; background-color: transparent; text-align: center;}
+</style>
+</head>
+<body>
+<div class="top-header" style="background-color:white;" >
+  <img src="icon1.png" alt="Logo" class="top-icon">
+  <img src="icon2.png" alt="Logo" class="top-icon">
+  <img src="icon3.png" alt="Logo" class="top-icon-leo">
+</div>
+Author: Sara Celda
+
+<div id="app"></div>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.2.1"></script>
+
+<script>
+// ---------------- CONFIG ----------------
+const CSV_URL = "https://dl.dropboxusercontent.com/scl/fi/5afu8dqbfz8l7b3lm55js/images_data_url_2.csv?rlkey=jg3oxwtabh5agco0ar7ffvge5&raw=1";
+const BASE_DIR = "https://dl.dropboxusercontent.com/scl/fi/obv7kqfbkhrl94p1r1p4v/";
+
+// --- CSV + TXT loading -------------------------------------------------------
+async function loadCSV(url){
+  const res = await fetch(url);
+  let text = await res.text();
+  return parseCSV(text);
+}
+
+function parseCSV(text){
+  const lines = text.trim().split(/\r?\n/);
+  const headers = lines[0].split(",").map(h=>h.trim());
+  return lines.slice(1).map(line=>{
+    const cols = line.split(",");
+    const row={};
+    headers.forEach((h,i)=>{ row[h]=cols[i]?.trim() });
+    return row;
+  });
+}
+
+async function preloadAll(rows){
+  const results = {};
+  const total = rows.length;
+
+  for(let i=0;i<rows.length;i++){
+    const row = rows[i];
+    try {
+      let txtUrl = row.DROPBOX;
+      if(!txtUrl) throw new Error(`Missing DROPBOX column for ${row.ID}`);
+      // Remove temporary st token
+      txtUrl = txtUrl.replace(/st=[^&]*&/g,"");
+      // Prepend BASE_DIR
+      txtUrl = BASE_DIR + txtUrl;
+      const txtRes = await fetch(txtUrl);
+      if(!txtRes.ok) throw new Error(`Failed to fetch TXT for ${row.ID}`);
+      const txt = await txtRes.text();
+      const {data2D,width,height} = parseTxtTo2D(txt,10);
+      if(width===0 || height===0) continue;
+      const {minVal,maxVal} = minMax(data2D);
+      const url = drawToDataURL(data2D,width,height,minVal,maxVal);
+      results[row.ID] = {...row,url};
+      console.log(`Preloaded ${i+1}/${total} (${Math.round(((i+1)/total)*100)}%)`);
+    } catch(err){
+      console.warn(`Skipping ${row.ID}: ${err.message}`);
+    }
+  }
+  return results;
+}
+
+function parseTxtTo2D(txt, headerLines=10){
+  const all=txt.replace(/\r/g,"").split("\n");
+  if(all.length<=headerLines) return {data2D:[],width:0,height:0};
+  const pixels=all.slice(headerLines).filter(l=>l.trim().length>0);
+  const data2D=pixels.map(l=>l.split(";").map(tok=>Number(tok.trim())).filter(n=>Number.isFinite(n)));
+  let width=0; data2D.forEach(r=>{if(r.length>width) width=r.length});
+  data2D.forEach(r=>{while(r.length<width) r.push(0)});
+  return {data2D,width,height:data2D.length};
+}
+
+function minMax(data2D){
+  let min=Infinity,max=-Infinity;
+  data2D.forEach(r=>r.forEach(v=>{if(v<min)min=v;if(v>max)max=v}));
+  return {minVal:min,maxVal:max};
+}
+
+function drawToDataURL(data2D,fullW,fullH,minVal,maxVal){
+  const canvas=document.createElement("canvas");
+  const targetW=405,targetH=405;
+  canvas.width=targetW;canvas.height=targetH;
+  const ctx=canvas.getContext("2d");
+  const imgData=ctx.createImageData(targetW,targetH);
+  const scaleX=fullW/targetW, scaleY=fullH/targetH;
+  const range=(maxVal-minVal)||1;
+  for(let ty=0;ty<targetH;ty++){
+    const sy=Math.min(fullH-1,Math.floor(ty*scaleY));
+    for(let tx=0;tx<targetW;tx++){
+      const sx=Math.min(fullW-1,Math.floor(tx*scaleX));
+      const v=data2D[sy][sx];
+      const norm=Math.floor(((v-minVal)/range)*255);
+      const idx=(ty*targetW+tx)*4;
+      imgData.data[idx]=norm; imgData.data[idx+1]=norm; imgData.data[idx+2]=norm; imgData.data[idx+3]=255;
+    }
+  }
+  ctx.putImageData(imgData,0,0);
+  return canvas.toDataURL();
+}
+
+// --- PC Charts builder (unchanged) ------------------------------------------
+function createPCCharts(container, list, control) {
+  const pcs = ["PC1", "PC2", "PC3", "PC4"];
+  const charts = [];
+  const thresholds = {
+    "Pitch": [2.78,2.82],
+    "Yaw": [2.06, 2.08],
+    "Iris": [1500],
+    "Z": [0]
+  };
+
+  const scrollWrapper = document.createElement("div");
+  scrollWrapper.style.display="flex"; scrollWrapper.style.flexDirection="column";
+  scrollWrapper.style.gap="20px"; scrollWrapper.style.overflowY="auto";
+  scrollWrapper.style.maxHeight="450px"; scrollWrapper.style.padding="10px 0";
+  scrollWrapper.style.marginTop="12px";
+  scrollWrapper.style.borderTop="1px solid rgba(255,255,255,0.1)";
+  scrollWrapper.style.borderBottom="1px solid rgba(255,255,255,0.1)";
+  container.appendChild(scrollWrapper);
+
+  pcs.forEach(pc=>{
+    const rowWrapper=document.createElement("div");
+    rowWrapper.style.display="flex";
+    rowWrapper.style.alignItems="center";
+    rowWrapper.style.justifyContent="space-between";
+    rowWrapper.style.gap="12px";
+
+    const canvas=document.createElement("canvas");
+    canvas.style.flex="1"; canvas.style.height="400px";
+
+    const icon=document.createElement("img");
+    icon.src=`icons/${pc}.png`;
+    icon.style.width="100px"; icon.style.height="100px";
+
+    rowWrapper.appendChild(canvas);
+    rowWrapper.appendChild(icon);
+    scrollWrapper.appendChild(rowWrapper);
+
+    const chart = new Chart(canvas,{
+      type:"scatter",
+      data:{datasets:[{
+        label:pc,
+        data:list.map(r=>({x:Number(r[control]),y:Number(r[pc]),ID:r.ID})),
+        pointBackgroundColor:list.map(()=> "rgba(96,165,250,0.7)"),
+        pointRadius:5
+      }]},
+      options:{
+        responsive:true,
+        maintainAspectRatio:false,
+        scales:{
+          x:{title:{display:true,text:control},ticks:{maxTicksLimit:30},grid:{color:"rgba(200,200,200,0.3)"}},
+          y:{title:{display:true,text:pc},grid:{color:"rgba(200,200,200,0.3)"}}
+        },
+        plugins:{
+          legend:{display:true},
+          tooltip:{callbacks:{label:ctx=>`${ctx.raw.ID}: x=${ctx.raw.x}, y=${ctx.raw.y}`}},
+          annotation:{annotations:thresholds[control]?.reduce((acc,val,idx)=>{
+            acc[`line${idx}`]={type:"line",xMin:val,xMax:val,borderColor:"green",borderWidth:2,borderDash:[6,6]}; return acc;
+          },{})||{}}
+        }
+      }
+    });
+
+    charts.push(chart);
+  });
+
+  return function highlight(id){
+    charts.forEach(chart=>{
+      const dataset=chart.data.datasets[0];
+      dataset.pointBackgroundColor=dataset.data.map(pt=> pt.ID===id ? "red" : "rgba(96,165,250,0.7)");
+      chart.update();
+    });
+  };
+}
+
+// --- Viewer builder ----------------------------------------------------------
+function createViewer(control, images, list){
+  const container=document.createElement("div");
+  container.className="container";
+  container.innerHTML=`
+    <header><h1>${control} Viewer</h1>
+      <div style="color:var(--muted); font-size:13px">Use the slider, arrows, or thumbnails</div>
+    </header>
+    <section class="viewer">
+      <div class="stage">
+        <img alt="Image slide" draggable="false" />
+        <div class="caption"></div>
+      </div>
+      <aside class="sidebar">
+        <div class="range-wrap">
+          <div class="range-labels"><span class="indexLabel">1</span><span class="totalLabel">/ ${images.length}</span></div>
+          <input type="range" min="0" max="${images.length-1}" value="0" step="1">
+          <div class="controls">
+            <button class="btn prevBtn">◀</button>
+            <button class="btn large-btn playBtn">Play</button>
+            <button class="btn nextBtn">▶</button>
+            <label style="margin-left:auto; color:var(--muted); font-size:13px">Autoplay</label>
+            <input class="autoplayToggle" type="checkbox">
+          </div>
+        </div>
+        <div style="font-size:13px; color:var(--muted);">Thumbnails</div>
+        <div class="thumbs"></div>
+        <div><button class="btn openBtn">View Eigenfaces</button></div>
+      </aside>
+    </section>`;
+  document.getElementById("app").appendChild(container);
+
+  let current=0,isPlaying=false,intervalId=null;
+  const stage=container.querySelector(".stage");
+  const mainImage=stage.querySelector("img");
+  const captionEl=stage.querySelector(".caption");
+  const slider=container.querySelector("input[type=range]");
+  const indexLabel=container.querySelector(".indexLabel");
+  const prevBtn=container.querySelector(".prevBtn");
+  const nextBtn=container.querySelector(".nextBtn");
+  const playBtn=container.querySelector(".playBtn");
+  const autoplayToggle=container.querySelector(".autoplayToggle");
+  const thumbs=container.querySelector(".thumbs");
+  const openBtn=container.querySelector(".openBtn");
+
+  images.forEach((it,i)=>{
+    const d=document.createElement("div"); d.className="thumb"; d.dataset.index=i;
+    const img=document.createElement("img"); img.src=it.url; img.alt=it.caption;
+    d.appendChild(img); d.addEventListener("click",()=>jumpTo(i));
+    thumbs.appendChild(d);
+  });
+
+  const highlight = createPCCharts(container,list,control);
+
+  function show(idx){
+    if(idx<0||idx>=images.length) return;
+    current=idx;
+    slider.value=idx;
+    indexLabel.textContent=idx+1;
+    captionEl.textContent=images[idx].caption||"";
+    const active=thumbs.querySelector(".thumb.active"); if(active) active.classList.remove("active");
+    const newThumb=thumbs.querySelector(`.thumb[data-index="${idx}"]`); if(newThumb) newThumb.classList.add("active");
+    mainImage.style.opacity=0; mainImage.style.transform="scale(1.02)";
+    setTimeout(()=>{ mainImage.src=images[idx].url; mainImage.onload=()=>{ mainImage.style.opacity=1; mainImage.style.transform="none"; }},150);
+    highlight(images[idx].ID);
+  }
+
+  function jumpTo(i){ stopAutoplayIfNotToggle(); show(i); }
+  function next(){ show(current+1); }
+  function prev(){ show(current-1); }
+  function startAutoplay(rate=1000){ if(isPlaying) return; isPlaying=true; playBtn.textContent="Pause"; autoplayToggle.checked=true; intervalId=setInterval(()=>{ show((current+1)%images.length); },rate);}
+  function stopAutoplay(){ if(!isPlaying) return; isPlaying=false; playBtn.textContent="Play"; autoplayToggle.checked=false; clearInterval(intervalId); intervalId=null; }
+  function togglePlay(){ isPlaying?stopAutoplay():startAutoplay(2200); }
+  function stopAutoplayIfNotToggle(){ if(!autoplayToggle.checked) stopAutoplay(); }
+
+  slider.addEventListener("input",e=>{show(Number(e.target.value));});
+  slider.addEventListener("change",()=>stopAutoplayIfNotToggle());
+  prevBtn.addEventListener("click",()=>{prev(); stopAutoplayIfNotToggle();});
+  nextBtn.addEventListener("click",()=>{next(); stopAutoplayIfNotToggle();});
+  playBtn.addEventListener("click",()=>togglePlay());
+  autoplayToggle.addEventListener("change",e=>{e.target.checked?startAutoplay():stopAutoplay();});
+  mainImage.addEventListener("dragstart",e=>e.preventDefault());
+  openBtn.addEventListener("click",()=>{ const img=images[current]; if(img) window.open(`icons/pc20variance.png`,"_blank");});
+
+  show(0);
+}
+
+// --- Main init ---------------------------------------------------------------
+(async function init(){
+  const rows = await loadCSV(CSV_URL);
+  const all = await preloadAll(rows);
+
+const groups={
+    "Yaw":   rows.filter(r=>r.ID.startsWith("46")).sort((a,b)=>a.Yaw-b.Yaw),
+    "Iris":  rows.filter(r=>r.ID.startsWith("70")).sort((a,b)=>a.Iris-b.Iris),
+    "Z":     rows.filter(r=>r.ID.startsWith("28")).sort((a,b)=>a.Z-b.Z),
+    "Pitch": rows.filter(r=>r.ID.startsWith("47")).sort((a,b)=>a.Pitch-b.Pitch)
+  };
+
+  for(const [control,list] of Object.entries(groups)){
+    if(list.length===0) continue;
+
+    const images=list
+      .map(r=>({
+        id:r.ID,
+        url: all[r.ID]?.url || "",
+        caption:`ID ${r.ID} — Yaw:${r.Yaw}, Pitch:${r.Pitch}, Z:${r.Z}, Iris:${r.Iris}`
+      }))
+      .filter(im=>im.url!=="");
+
+    if(images.length>0){
+      createViewer(control,images,list);
+    }
+  }
+})();
+</script>
+
+</body>
+</html>
