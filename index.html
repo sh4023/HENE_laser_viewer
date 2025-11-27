@@ -65,11 +65,28 @@
   <img src="icon2.png" alt="Logo" class="top-icon">
   <img src="icon3.png" alt="Logo" class="top-icon-leo">
 </div>
-Author: S.C.                     
-Note: Please wait 1-2 mins for the page to load. If you want to see the loading progress RMC > Inspeact > Console tab.
-  
-Loading...
+Author: S.C.     
+<div id="loadingOverlay" style="
+  position: fixed;
+  top:0; left:0; width:100%; height:100%;
+  background: rgba(0,0,0,0.85);
+  color: #60a5fa;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+  font-family: Inter, sans-serif;
+  font-size: 18px;
+  z-index:9999;
+">
+  <div id="loadingText">Loading 0%</div>
+  <div style="margin-top:12px; width:200px; height:8px; background:#222; border-radius:4px;">
+    <div id="loadingBar" style="width:0%; height:100%; background:#60a5fa; border-radius:4px;"></div>
+  </div>
+</div>
+
 <div id="app"></div>
+
 
 <!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -102,30 +119,36 @@ async function preloadAll(rows){
   const results = {};
   const total = rows.length;
 
-  for(let i=0;i<rows.length;i++){
+  const loadingOverlay = document.getElementById("loadingOverlay");
+  const loadingText = document.getElementById("loadingText");
+  const loadingBar = document.getElementById("loadingBar");
+
+  for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     try {
-      let txtUrl = row.DROPBOX;
-      if(!txtUrl) throw new Error(`Missing DROPBOX column for ${row.ID}`);
-      // Remove temporary st token
-      txtUrl = txtUrl.replace(/st=[^&]*&/g,"");
-      // Prepend BASE_DIR
-      txtUrl = BASE_DIR + txtUrl;
-      const txtRes = await fetch(txtUrl);
-      if(!txtRes.ok) throw new Error(`Failed to fetch TXT for ${row.ID}`);
+      const txtRes = await fetch(row.DROPBOX); // your DROPBOX URL logic
       const txt = await txtRes.text();
       const {data2D,width,height} = parseTxtTo2D(txt,10);
       if(width===0 || height===0) continue;
       const {minVal,maxVal} = minMax(data2D);
       const url = drawToDataURL(data2D,width,height,minVal,maxVal);
-      results[row.ID] = {...row,url};
-      console.log(`Preloaded ${i+1}/${total} (${Math.round(((i+1)/total)*100)}%)`);
-    } catch(err){
+      results[row.ID] = {...row, url};
+    } catch(err) {
       console.warn(`Skipping ${row.ID}: ${err.message}`);
     }
+
+    // Update progress
+    const percent = Math.round(((i+1)/total)*100);
+    loadingText.textContent = `Loading ${percent}%`;
+    loadingBar.style.width = `${percent}%`;
   }
+
+  // Hide overlay when done
+  loadingOverlay.style.display = "none";
+
   return results;
 }
+
 
 function parseTxtTo2D(txt, headerLines=10){
   const all=txt.replace(/\r/g,"").split("\n");
@@ -359,6 +382,7 @@ const groups={
 
 </body>
 </html>
+
 
 
 
