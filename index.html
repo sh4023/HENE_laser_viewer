@@ -65,7 +65,8 @@
   <img src="icon2.png" alt="Logo" class="top-icon">
   <img src="icon3.png" alt="Logo" class="top-icon-leo">
 </div>
-Author: S.C.     
+Author: S.C.    
+Last update: 27-01-2026
 
 <div id="loadingOverlay" style="
   position: fixed;
@@ -92,7 +93,9 @@ Author: S.C.
 <!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.2.1"></script>
-
+<script>
+  Chart.register(window['chartjs-plugin-annotation']);
+</script>
 
 <script>
 // ---------------- CONFIG ----------------
@@ -418,6 +421,7 @@ const groups={
 
 </body>
 </html>
+
 
 
 
