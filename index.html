@@ -267,6 +267,7 @@ function createPCCharts(container, list, control) {
   });
 
       return function highlight(id) {
+        console.log("Highlight called with:", id);
     charts.forEach(chart => {
       const dataset = chart.data.datasets[0];
 
@@ -417,12 +418,13 @@ const groups={
     }
   }
 }
- console.log("Highlight called with:", id);
+ 
 )();
 </script>
 
 </body>
 </html>
+
 
 
 
