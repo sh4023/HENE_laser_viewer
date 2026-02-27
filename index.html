@@ -238,7 +238,7 @@ function createPCCharts(container, list, control) {
     const chart = new Chart(canvas,{
       type:"scatter",
       data:{datasets:[{
-        label:pc,
+        label: `${pc} vs ${control}`,
         data:list.map(r=>({x:Number(r[control]),y:Number(r[pc]),ID:r.ID})),
         pointBackgroundColor:list.map(()=> "rgba(96,165,250,0.7)"),
         pointRadius:5
@@ -263,10 +263,37 @@ function createPCCharts(container, list, control) {
     charts.push(chart);
   });
 
-  return function highlight(id){
-    charts.forEach(chart=>{
-      const dataset=chart.data.datasets[0];
-      dataset.pointBackgroundColor=dataset.data.map(pt=> pt.ID===id ? "red" : "rgba(96,165,250,0.7)");
+      return function highlight(id) {
+    charts.forEach(chart => {
+      const dataset = chart.data.datasets[0];
+
+      // Find point
+      const point = dataset.data.find(pt => pt.ID === id);
+
+      if (!point) return;
+
+      const xValue = point.x;
+
+      // Ensure annotation object exists
+      if (!chart.options.plugins.annotation.annotations) {
+        chart.options.plugins.annotation.annotations = {};
+      }
+
+      // Create or update vertical line
+      chart.options.plugins.annotation.annotations.activeLine = {
+        type: "line",
+        xMin: xValue,
+        xMax: xValue,
+        borderColor: "red",
+        borderWidth: 2,
+        borderDash: [4, 4],
+        label: {
+          display: true,
+          content: `x: ${point.x}, y: ${point.y}`,
+          position: "start"
+        }
+      };
+
       chart.update();
     });
   };
@@ -391,6 +418,7 @@ const groups={
 
 </body>
 </html>
+
 
 
 
