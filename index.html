@@ -271,7 +271,7 @@ function createPCCharts(container, list, control) {
       const dataset = chart.data.datasets[0];
 
       // Find point
-      const point = dataset.data.find(pt => pt.ID === id);
+      const point = dataset.data.find(pt => String(pt.ID) === String(id));
 
       if (!point) return;
 
@@ -416,11 +416,14 @@ const groups={
       createViewer(control,images,list);
     }
   }
-})();
+}
+ console.log("Highlight called with:", id);
+)();
 </script>
 
 </body>
 </html>
+
 
 
 
